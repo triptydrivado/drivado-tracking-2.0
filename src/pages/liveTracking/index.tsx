@@ -1,6 +1,6 @@
 import Tracking from "@/pages/liveTracking/tracking/index";
 import LiveTrackingDashboard from "./dashboard";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import DIcon from "@/assets/images/d-icon.png";
 import { X } from "lucide-react";
 import { useParams } from "react-router-dom";
@@ -11,6 +11,9 @@ import type { DriverStatus } from "@/types/tracking";
 import { toEtaMinutes } from "@/utils/etaFormat";
 import { Button } from "@/components/ui/button";
 import JourneyComplete from "./journeyComplete";
+import { useSelector, useDispatch } from "react-redux";
+import type { RootState } from "@/store";
+import { getBookingDetailsRequest } from "@/store/liveBooking/liveBookingSlice";
 
 /** Banner text for each trip step; the drop-off is only named once the passenger is on board. */
 const bannerText = (
@@ -22,13 +25,19 @@ const bannerText = (
     case "ENROUTE":
       return { title: "Driver on the way", detail: `Pickup ${timeLeft} away` };
     case "ARRIVED":
-      return { title: "Your driver has arrived", detail: "Waiting at the pickup" };
+      return {
+        title: "Your driver has arrived",
+        detail: "Waiting at the pickup",
+      };
     case "COMPLETED":
       return { title: "You've arrived", detail: dropoffLocation };
     case "NOSHOW":
       return { title: "Trip ended", detail: "Passenger no show" };
     default:
-      return { title: "Almost there!", detail: `${dropoffLocation} ${timeLeft} away` };
+      return {
+        title: "Almost there!",
+        detail: `${dropoffLocation} ${timeLeft} away`,
+      };
   }
 };
 
@@ -38,31 +47,50 @@ interface TrackingMapProps {
   timeLeft?: string;
 }
 
-const LiveTracking = ({
-  isJourneyCompleted = true,
-  dropoffLocation = "The Savoy",
-  timeLeft = "1 min",
-}: TrackingMapProps) => {
+const LiveTracking = ({ isJourneyCompleted = true }: TrackingMapProps) => {
   const [showNotification, setShowNotification] = useState(isJourneyCompleted);
   const [isDashboardExpanded, setIsDashboardExpanded] = useState(false);
   const [showJourneyComplete, setShowJourneyComplete] = useState(false);
 
   const { tripId } = useParams<{ tripId: string }>();
+
+  const dispatch = useDispatch();
+
+  useEffect(() => {
+    if (tripId) {
+      console.log("Fetching booking details for tripId:", tripId);
+      dispatch(getBookingDetailsRequest(tripId));
+    }
+  }, [dispatch, tripId]);
+  const { driver, bookingDetails } = useSelector(
+    (state: RootState) => state.liveBooking,
+  );
+
   const eta = useAppSelector(selectEta);
-  const etaTimeLeft = eta ? `${toEtaMinutes(eta.etaSeconds)} min` : timeLeft;
+  const etaTimeLeft = eta ? `${toEtaMinutes(eta.etaSeconds)} min` : "";
   const status = useAppSelector(selectDriverStatus);
-  const banner = bannerText(status, dropoffLocation, etaTimeLeft);
+  const banner = bannerText(
+    status,
+    bookingDetails?.dropOffName ?? "",
+    etaTimeLeft,
+  );
 
   // Temporary sample data. I will Replace with actual completed trip data.
   const completedTrip = {
-    duration: eta ? toEtaMinutes(eta.etaSeconds) : 55,
-    distance: eta ? eta.distanceMeters / 1000 : 34.6,
-    dropoffLocation,
-    driverName: "Manav Singh Yadav",
-    vehicleType: "Luxury Sedan",
-    bookingId: tripId ?? "",
-    bookingLabel: "Booking",
+    duration: eta ? toEtaMinutes(eta.etaSeconds) : 0,
+    distance: eta ? eta.distanceMeters / 1000 : 0,
+    // dropoffLocation,
+    dropoffLocation: bookingDetails?.dropOffName ?? "",
+    vehicleType: bookingDetails?.vehicleType ?? "",
+    bookingId: bookingDetails?.bookingId ?? "",
+    // bookingLabel: "Booking",
   };
+
+  useEffect(() => {
+    if (status === "COMPLETED") {
+      setShowJourneyComplete(true);
+    }
+  }, [status]);
 
   return (
     <div className="relative flex h-dvh w-full overflow-hidden flex-col md:flex-row bg-slate-100">
@@ -100,9 +128,10 @@ const LiveTracking = ({
         )}
 
         {/* COMPLETED JOURNEY MODAL */}
-        {showJourneyComplete && (
+        {showJourneyComplete && driver && (
           <JourneyComplete
             trip={completedTrip}
+            driver={driver}
             onSubmitFeedback={(feedback) => {
               console.log("Feedback:", feedback);
             }}
@@ -114,16 +143,19 @@ const LiveTracking = ({
       <div
         className={`absolute bottom-0 left-0 z-20 w-full overflow-visible bg-white transition-[height] duration-300 ease-in-out ${isDashboardExpanded ? "h-[85%]" : "h-[48%]"} md:relative md:bottom-auto md:left-auto md:order-1 md:h-full md:w-95 md:min-w-95 md:shrink-0 md:overflow-hidden`}
       >
-        <LiveTrackingDashboard onExpandedChange={setIsDashboardExpanded} />
+        <LiveTrackingDashboard
+          onExpandedChange={setIsDashboardExpanded}
+          // tripId={tripId ?? ""}
+        />
       </div>
       {/* TEMPORARY TEST BUTTON */}
-      <button
+      {/* <button
         type="button"
         onClick={() => setShowJourneyComplete(true)}
         className="absolute bottom-4 right-20 z-60 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white shadow-lg hover:bg-emerald-800"
       >
         Test Completed Modal
-      </button>
+      </button> */}
     </div>
   );
 };
